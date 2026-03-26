@@ -9,7 +9,7 @@ public class CsvExporter {
             writer.println("x;f(x)");
             for (double x = xStart; x <= xEnd + step / 2; x += step) {
                 double val = func.apply(x);
-                writer.printf("%.6f;%.10f%n", x, val);
+                writer.printf("(%.6f, %.10f)%n", x, val);
             }
         }
     }

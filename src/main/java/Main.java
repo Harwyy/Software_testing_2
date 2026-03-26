@@ -6,8 +6,8 @@ public class Main {
     public static void main(String[] args) {
         double eps = 0.1;
         FuncFactory factory = new FuncFactory(eps);
-//        MathFunction func = factory.createPiecewise();
-        MathFunction func = new SinFunc(eps);
+        MathFunction func = factory.createPiecewise();
+//        MathFunction func = new SinFunc(eps);
 
 //        double[] testPoints = {
 //                -Math.PI/2,
@@ -29,7 +29,7 @@ public class Main {
 //        }
 
         try {
-            CsvExporter.export("func_output.csv", -3.0, 3.0, 0.1, func);
+            CsvExporter.export("func_output.csv", -0.5, 0.5, 0.05, func);
             System.out.println("Файл 'func_output.csv' успешно создан.");
         } catch (Exception e) {
             System.err.println("Ошибка при записи CSV: " + e.getMessage());
