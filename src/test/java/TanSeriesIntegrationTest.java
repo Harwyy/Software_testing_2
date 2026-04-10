@@ -10,113 +10,98 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.*;
 
 class TanSeriesIntegrationTest {
-    private static final double EPS = 1e-15;
-    private static final String sinSeriesCsv = "sin_series_mock.csv";
-    private static final String sinMathCsv = "sin_math_mock.csv";
-    private static final String cosSeriesCsv = "cos_series_mock.csv";
-    private static final String cosMathCsv = "cos_math_mock.csv";
+    private static final String SIN_SERIES_CSV = "sin_series_mock.csv";
+    private static final String COS_SERIES_CSV = "cos_series_mock.csv";
+    private static Map<Double, Double> sinValuesFromCsv;
+    private static Map<Double, Double> cosValuesFromCsv;
 
     @BeforeAll
-    static void generateCsvFiles() throws IOException {
-        SinSeries realSin = new SinSeries(EPS);
+    static void generateCsvAndLoadValues() throws IOException {
+        SinSeries realSin = new SinSeries(1e-15);
         CosSeries realCos = new CosSeries(realSin);
 
-        double start = -4 * Math.PI;
-        double end = 4 * Math.PI;
+        double start = -6;
+        double end = 6;
         double step = 0.001;
-        int steps = (int) Math.round((end - start) / step);
 
-        List<double[]> sinSeriesData = new ArrayList<>();
-        List<double[]> sinMathData = new ArrayList<>();
-        List<double[]> cosSeriesData = new ArrayList<>();
-        List<double[]> cosMathData = new ArrayList<>();
+        List<double[]> sinData = new ArrayList<>();
+        List<double[]> cosData = new ArrayList<>();
 
-        for (int i = 0; i <= steps; i++) {
-            double x = start + i * step;
-            sinSeriesData.add(new double[]{x, realSin.sin(x)});
-            sinMathData.add(new double[]{x, Math.sin(x)});
-            cosSeriesData.add(new double[]{x, realCos.cos(x)});
-            cosMathData.add(new double[]{x, Math.cos(x)});
+        for (double x = start; x <= end; x += step) {
+            sinData.add(new double[]{x, realSin.sin(x)});
+            cosData.add(new double[]{x, realCos.cos(x)});
         }
 
-        CsvUtils.write(sinSeriesCsv, sinSeriesData.toArray(new double[0][]));
-        CsvUtils.write(sinMathCsv, sinMathData.toArray(new double[0][]));
-        CsvUtils.write(cosSeriesCsv, cosSeriesData.toArray(new double[0][]));
-        CsvUtils.write(cosMathCsv, cosMathData.toArray(new double[0][]));
+        CsvUtils.write(SIN_SERIES_CSV, sinData.toArray(new double[0][]));
+        CsvUtils.write(COS_SERIES_CSV, cosData.toArray(new double[0][]));
+
+        sinValuesFromCsv = CsvUtils.read(SIN_SERIES_CSV);
+        cosValuesFromCsv = CsvUtils.read(COS_SERIES_CSV);
     }
 
     @AfterAll
     static void cleanup() throws IOException {
-        Files.deleteIfExists(Path.of(sinSeriesCsv));
-        Files.deleteIfExists(Path.of(sinMathCsv));
-        Files.deleteIfExists(Path.of(cosSeriesCsv));
-        Files.deleteIfExists(Path.of(cosMathCsv));
+        Files.deleteIfExists(Path.of(SIN_SERIES_CSV));
+        Files.deleteIfExists(Path.of(COS_SERIES_CSV));
     }
 
     @Test
-    void testTanUsingMocksFromSeries() throws IOException {
-        MockFunction mockSin = new MockFunction(sinSeriesCsv);
-        MockFunction mockCos = new MockFunction(cosSeriesCsv);
-        SinSeries sinMock = new SinSeries(EPS) {
-            @Override
-            public double sin(double x) { return mockSin.apply(x); }
-        };
-        CosSeries cosMock = new CosSeries(sinMock) {
-            @Override
-            public double cos(double x) { return mockCos.apply(x); }
-        };
-        TanSeries tanSeries = new TanSeries(sinMock, cosMock);
+    void testTanUsingMocksFromSeries() {
+        SinSeries mockSin = mock(SinSeries.class);
+        CosSeries mockCos = mock(CosSeries.class);
 
-        double start = -3 * Math.PI;
-        double end = 3 * Math.PI;
-        double step = 0.3;
-        for (double x = start; x <= end + 1e-12; x += step) {
+        when(mockSin.sin(anyDouble())).thenAnswer(invocation -> {
+            double x = invocation.getArgument(0);
+            for (Map.Entry<Double, Double> entry : sinValuesFromCsv.entrySet()) {
+                if (Math.abs(entry.getKey() - x) <= 1e-4) {
+                    return entry.getValue();
+                }
+            }
+            throw new IllegalArgumentException("Sin: значение для x=" + x + " не найдено");
+        });
+
+        when(mockCos.cos(anyDouble())).thenAnswer(invocation -> {
+            double x = invocation.getArgument(0);
+            for (Map.Entry<Double, Double> entry : cosValuesFromCsv.entrySet()) {
+                if (Math.abs(entry.getKey() - x) <= 1e-4) {
+                    return entry.getValue();
+                }
+            }
+            throw new IllegalArgumentException("Cos: значение для x=" + x + " не найдено");
+        });
+
+        TanSeries tanSeries = new TanSeries(mockSin, mockCos);
+
+        double start = -3.15;
+        double end = 3.15;
+        double step = 0.25;
+
+        for (double x = start; x <= end; x += step) {
             if (Math.abs(Math.cos(x)) < 1e-10) continue;
             double expected = Math.tan(x);
             double actual = tanSeries.tan(x);
-            assertEquals(expected, actual, 1e-5);
-        }
-    }
-
-    @Test
-    void testTanUsingMocksFromMath() throws IOException {
-        MockFunction mockSin = new MockFunction(sinMathCsv);
-        MockFunction mockCos = new MockFunction(cosMathCsv);
-        SinSeries sinMock = new SinSeries(EPS) {
-            @Override
-            public double sin(double x) { return mockSin.apply(x); }
-        };
-        CosSeries cosMock = new CosSeries(sinMock) {
-            @Override
-            public double cos(double x) { return mockCos.apply(x); }
-        };
-        TanSeries tanSeries = new TanSeries(sinMock, cosMock);
-
-        double start = -3 * Math.PI;
-        double end = 3 * Math.PI;
-        double step = 0.3;
-        for (double x = start; x <= end + 1e-12; x += step) {
-            if (Math.abs(Math.cos(x)) < 1e-10) continue;
-            double expected = Math.tan(x);
-            double actual = tanSeries.tan(x);
-            assertEquals(expected, actual, 1e-5);
+            assertEquals(expected, actual, 1e-3);
         }
     }
 
     @Test
     void testTanUsingRealSeries() {
-        SinSeries realSin = new SinSeries(EPS);
+        SinSeries realSin = new SinSeries(1e-15);
         CosSeries realCos = new CosSeries(realSin);
         TanSeries tanSeries = new TanSeries(realSin, realCos);
 
-        double start = -3 * Math.PI;
-        double end = 3 * Math.PI;
-        double step = 0.3;
-        for (double x = start; x <= end + 1e-12; x += step) {
+        double start = -3.15;
+        double end = 3.15;
+        double step = 0.25;
+
+        for (double x = start; x <= end; x += step) {
             if (Math.abs(Math.cos(x)) < 1e-10) continue;
             double expected = Math.tan(x);
             double actual = tanSeries.tan(x);

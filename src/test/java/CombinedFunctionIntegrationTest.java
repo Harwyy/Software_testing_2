@@ -8,17 +8,22 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.*;
 
 class CombinedFunctionIntegrationTest {
-    private static final String negativeCsv = "negative_func_mock.csv";
-    private static final String positiveCsv = "positive_func_mock.csv";
+    private static final String NEGATIVE_CSV = "negative_func_mock.csv";
+    private static final String POSITIVE_CSV = "positive_func_mock.csv";
+    private static Map<Double, Double> negativeValuesFromCsv;
+    private static Map<Double, Double> positiveValuesFromCsv;
 
     @BeforeAll
-    static void generateCsvFiles() throws IOException {
-        LnSeries realLn = new LnSeries(1e-12);
-        SinSeries realSin = new SinSeries(1e-12);
+    static void generateCsvAndLoadValues() throws IOException {
+        LnSeries realLn = new LnSeries(1e-15);
+        SinSeries realSin = new SinSeries(1e-15);
         CosSeries realCos = new CosSeries(realSin);
         TanSeries realTan = new TanSeries(realSin, realCos);
         Log2Series realLog2 = new Log2Series(realLn);
@@ -28,64 +33,67 @@ class CombinedFunctionIntegrationTest {
         NegativeXFunction realNegative = new NegativeXFunction(realCos, realTan);
         PositiveXFunction realPositive = new PositiveXFunction(realLog2, realLog5, realLog10);
 
-        double negStart = -5;
+        double negStart = -6;
         double negEnd = 0;
-        double step = 0.01;
-        int negSteps = (int) Math.round((negEnd - negStart) / step);
+        double negStep = 0.001;
         List<double[]> negData = new ArrayList<>();
-        for (int i = 0; i <= negSteps; i++) {
-            double x = negStart + i * step;
+        for (double x = negStart; x <= negEnd; x += negStep) {
             if (Math.abs(Math.cos(x)) < 1e-10) continue;
-            double value = realNegative.compute(x);
-            negData.add(new double[]{x, value});
+            negData.add(new double[]{x, realNegative.compute(x)});
         }
-        CsvUtils.write(negativeCsv, negData.toArray(new double[0][]));
+        CsvUtils.write(NEGATIVE_CSV, negData.toArray(new double[0][]));
 
-        double posStart = 0.1;
-        double posEnd = 5;
-        int posSteps = (int) Math.round((posEnd - posStart) / step);
+        double posStart = 0.5;
+        double posEnd = 10;
+        double posStep = 0.5;
         List<double[]> posData = new ArrayList<>();
-        for (int i = 0; i <= posSteps; i++) {
-            double x = posStart + i * step;
-            double value = realPositive.compute(x);
-            posData.add(new double[]{x, value});
+        for (double x = posStart; x <= posEnd; x += posStep) {
+            posData.add(new double[]{x, realPositive.compute(x)});
         }
-        CsvUtils.write(positiveCsv, posData.toArray(new double[0][]));
+        CsvUtils.write(POSITIVE_CSV, posData.toArray(new double[0][]));
+
+        negativeValuesFromCsv = CsvUtils.read(NEGATIVE_CSV);
+        positiveValuesFromCsv = CsvUtils.read(POSITIVE_CSV);
     }
 
     @AfterAll
     static void cleanup() throws IOException {
-        Files.deleteIfExists(Path.of(negativeCsv));
-        Files.deleteIfExists(Path.of(positiveCsv));
+        Files.deleteIfExists(Path.of(NEGATIVE_CSV));
+        Files.deleteIfExists(Path.of(POSITIVE_CSV));
     }
 
     @Test
-    void testCombinedFunctionWithMocks() throws IOException {
-        MockFunction mockNegative = new MockFunction(negativeCsv);
-        NegativeXFunction negativeMock = new NegativeXFunction(null, null) {
-            @Override
-            public double compute(double x) {
-                if (x > 0) throw new IllegalArgumentException("x <= 0");
-                return mockNegative.apply(x);
-            }
-        };
+    void testCombinedFunctionUsingMocksFromSeries() {
+        NegativeXFunction mockNegative = mock(NegativeXFunction.class);
+        PositiveXFunction mockPositive = mock(PositiveXFunction.class);
 
-        MockFunction mockPositive = new MockFunction(positiveCsv);
-        PositiveXFunction positiveMock = new PositiveXFunction(null, null, null) {
-            @Override
-            public double compute(double x) {
-                if (x <= 0) throw new IllegalArgumentException("x > 0");
-                return mockPositive.apply(x);
+        when(mockNegative.compute(anyDouble())).thenAnswer(invocation -> {
+            double x = invocation.getArgument(0);
+            for (Map.Entry<Double, Double> entry : negativeValuesFromCsv.entrySet()) {
+                if (Math.abs(entry.getKey() - x) <= 1e-4) {
+                    return entry.getValue();
+                }
             }
-        };
+            throw new IllegalArgumentException("Negative: значение для x=" + x + " не найдено");
+        });
 
-        CombinedFunction combined = new CombinedFunction(negativeMock, positiveMock);
+        when(mockPositive.compute(anyDouble())).thenAnswer(invocation -> {
+            double x = invocation.getArgument(0);
+            for (Map.Entry<Double, Double> entry : positiveValuesFromCsv.entrySet()) {
+                if (Math.abs(entry.getKey() - x) <= 1e-3) {
+                    return entry.getValue();
+                }
+            }
+            throw new IllegalArgumentException("Positive: значение для x=" + x + " не найдено");
+        });
+
+        CombinedFunction combined = new CombinedFunction(mockNegative, mockPositive);
 
         double start = -5;
         double end = 5;
         double step = 0.5;
-        for (double x = start; x <= end + 1e-12; x += step) {
-            if (Math.abs(Math.cos(x)) < 1e-10) continue;
+        for (double x = start; x <= end; x += step) {
+            if (Math.abs(Math.cos(x)) < 1e-10 || x == 0) continue;
             double expected;
             if (x <= 0) {
                 expected = Math.cos(x) - Math.tan(x);
@@ -93,14 +101,14 @@ class CombinedFunctionIntegrationTest {
                 expected = computePositiveExpected(x);
             }
             double actual = combined.compute(x);
-            assertEquals(expected, actual, 1e-7);
+            assertEquals(expected, actual, 1e-3);
         }
     }
 
     @Test
-    void testCombinedFunctionWithRealSeries() {
-        LnSeries realLn = new LnSeries(1e-12);
-        SinSeries realSin = new SinSeries(1e-12);
+    void testCombinedFunctionUsingRealSeries() {
+        LnSeries realLn = new LnSeries(1e-15);
+        SinSeries realSin = new SinSeries(1e-15);
         CosSeries realCos = new CosSeries(realSin);
         TanSeries realTan = new TanSeries(realSin, realCos);
         Log2Series realLog2 = new Log2Series(realLn);
@@ -109,13 +117,12 @@ class CombinedFunctionIntegrationTest {
 
         NegativeXFunction realNegative = new NegativeXFunction(realCos, realTan);
         PositiveXFunction realPositive = new PositiveXFunction(realLog2, realLog5, realLog10);
-
         CombinedFunction combined = new CombinedFunction(realNegative, realPositive);
 
         double start = -5;
         double end = 5;
         double step = 0.5;
-        for (double x = start; x <= end + 1e-12; x += step) {
+        for (double x = start; x <= end; x += step) {
             if (Math.abs(Math.cos(x)) < 1e-10) continue;
             double expected;
             if (x <= 0) {

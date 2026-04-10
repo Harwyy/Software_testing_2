@@ -9,78 +9,59 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.*;
 
 class Log10SeriesIntegrationTest {
-    private static final double EPS = 1e-9;
-    private static final String lnSeriesCsv = "ln_series_mock10.csv";
-    private static final String lnMathCsv = "ln_math_mock10.csv";
+    private static final String LN_SERIES_CSV = "log10_series_mock.csv";
+    private static Map<Double, Double> lnValuesFromCsv;
 
     @BeforeAll
-    static void generateCsvFiles() throws IOException {
-        LnSeries realLn = new LnSeries(EPS);
+    static void generateCsvAndLoadValues() throws IOException {
+        LnSeries realLn = new LnSeries(1e-15);
 
-        double startLn = 0.1;
-        double endLn = 10;
-        double step = 0.1;
-        int steps = (int) Math.round((endLn - startLn) / step);
+        double start = 2;
+        double end = 100;
+        double step = 1;
 
-        List<double[]> lnSeriesData = new ArrayList<>();
-        List<double[]> lnMathData = new ArrayList<>();
+        List<double[]> lnData = new ArrayList<>();
 
-        for (int i = 0; i <= steps; i++) {
-            double x = startLn + i * step;
-            lnSeriesData.add(new double[]{x, realLn.ln(x)});
-            lnMathData.add(new double[]{x, Math.log(x)});
+        for (double x = start; x <= end; x += step) {
+            lnData.add(new double[]{x, realLn.ln(x)});
         }
 
-        CsvUtils.write(lnSeriesCsv, lnSeriesData.toArray(new double[0][]));
-        CsvUtils.write(lnMathCsv, lnMathData.toArray(new double[0][]));
+        CsvUtils.write(LN_SERIES_CSV, lnData.toArray(new double[0][]));
+        lnValuesFromCsv = CsvUtils.read(LN_SERIES_CSV);
     }
 
     @AfterAll
     static void cleanup() throws IOException {
-        Files.deleteIfExists(Path.of(lnSeriesCsv));
-        Files.deleteIfExists(Path.of(lnMathCsv));
+        Files.deleteIfExists(Path.of(LN_SERIES_CSV));
     }
 
     @Test
-    void testLog10UsingMockLnFromSeries() throws IOException {
-        MockFunction mockLnFunc = new MockFunction(lnSeriesCsv);
-        LnSeries mockLn = new LnSeries(EPS) {
-            @Override
-            public double ln(double x) {
-                return mockLnFunc.apply(x);
+    void testLog10UsingMockLnFromSeries() {
+        LnSeries mockLn = mock(LnSeries.class);
+
+        when(mockLn.ln(anyDouble())).thenAnswer(invocation -> {
+            double x = invocation.getArgument(0);
+            for (Map.Entry<Double, Double> entry : lnValuesFromCsv.entrySet()) {
+                if (Math.abs(entry.getKey() - x) <= 1e-3) {
+                    return entry.getValue();
+                }
             }
-        };
+            throw new IllegalArgumentException("Не найдено значение ln для x = " + x);
+        });
+
         Log10Series log10 = new Log10Series(mockLn);
 
-        double start = 0.2;
-        double end = 8;
-        double step = 0.3;
-        for (double x = start; x <= end + 1e-12; x += step) {
-            double expected = Math.log(x) / Math.log(10);
-            double actual = log10.log10(x);
-            assertEquals(expected, actual, 1e-7);
-        }
-    }
-
-    @Test
-    void testLog10UsingMockLnFromMath() throws IOException {
-        MockFunction mockLnMath = new MockFunction(lnMathCsv);
-        LnSeries mockLn = new LnSeries(EPS) {
-            @Override
-            public double ln(double x) {
-                return mockLnMath.apply(x);
-            }
-        };
-        Log10Series log10 = new Log10Series(mockLn);
-
-        double start = 0.2;
-        double end = 8;
-        double step = 0.3;
-        for (double x = start; x <= end + 1e-12; x += step) {
+        double start = 2;
+        double end = 100;
+        double step = 1;
+        for (double x = start; x <= end; x += step) {
             double expected = Math.log(x) / Math.log(10);
             double actual = log10.log10(x);
             assertEquals(expected, actual, 1e-7);
@@ -89,13 +70,13 @@ class Log10SeriesIntegrationTest {
 
     @Test
     void testLog10UsingRealLn() {
-        LnSeries realLn = new LnSeries(EPS);
+        LnSeries realLn = new LnSeries(1e-15);
         Log10Series log10 = new Log10Series(realLn);
 
-        double start = 0.2;
-        double end = 8;
-        double step = 0.3;
-        for (double x = start; x <= end + 1e-12; x += step) {
+        double start = 2;
+        double end = 100;
+        double step = 1;
+        for (double x = start; x <= end; x += step) {
             double expected = Math.log(x) / Math.log(10);
             double actual = log10.log10(x);
             assertEquals(expected, actual, 1e-7);

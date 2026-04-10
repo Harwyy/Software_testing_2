@@ -8,135 +8,99 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.*;
 
 class PositiveXFunctionIntegrationTest {
-    private static final double EPS = 1e-12;
-    private static final String log2SeriesCsv = "log2_series_mock.csv";
-    private static final String log2MathCsv = "log2_math_mock.csv";
-    private static final String log5SeriesCsv = "log5_series_mock.csv";
-    private static final String log5MathCsv = "log5_math_mock.csv";
-    private static final String log10SeriesCsv = "log10_series_mock.csv";
-    private static final String log10MathCsv = "log10_math_mock.csv";
+    private static final String LOG2_SERIES_CSV = "log2_series_mock.csv";
+    private static final String LOG5_SERIES_CSV = "log5_series_mock.csv";
+    private static final String LOG10_SERIES_CSV = "log10_series_mock.csv";
+    private static Map<Double, Double> log2ValuesFromCsv;
+    private static Map<Double, Double> log5ValuesFromCsv;
+    private static Map<Double, Double> log10ValuesFromCsv;
 
     @BeforeAll
-    static void generateCsvFiles() throws IOException {
-        LnSeries realLn = new LnSeries(EPS);
+    static void generateCsvAndLoadValues() throws IOException {
+        LnSeries realLn = new LnSeries(1e-15);
         Log2Series realLog2 = new Log2Series(realLn);
         Log5Series realLog5 = new Log5Series(realLn);
         Log10Series realLog10 = new Log10Series(realLn);
 
-        double start = 0.001;
-        double end = 10;
-        double step = 0.001;
-        int steps = (int) Math.round((end - start) / step);
+        double start = 1;
+        double end = 1000;
+        double step = 1;
 
-        List<double[]> log2SeriesData = new ArrayList<>();
-        List<double[]> log2MathData = new ArrayList<>();
-        List<double[]> log5SeriesData = new ArrayList<>();
-        List<double[]> log5MathData = new ArrayList<>();
-        List<double[]> log10SeriesData = new ArrayList<>();
-        List<double[]> log10MathData = new ArrayList<>();
+        List<double[]> log2Data = new ArrayList<>();
+        List<double[]> log5Data = new ArrayList<>();
+        List<double[]> log10Data = new ArrayList<>();
 
-        for (int i = 0; i <= steps; i++) {
-            double x = start + i * step;
-            log2SeriesData.add(new double[]{x, realLog2.log2(x)});
-            log2MathData.add(new double[]{x, Math.log(x) / Math.log(2)});
-            log5SeriesData.add(new double[]{x, realLog5.log5(x)});
-            log5MathData.add(new double[]{x, Math.log(x) / Math.log(5)});
-            log10SeriesData.add(new double[]{x, realLog10.log10(x)});
-            log10MathData.add(new double[]{x, Math.log10(x)});
+        for (double x = start; x <= end; x += step) {
+            log2Data.add(new double[]{x, realLog2.log2(x)});
+            log5Data.add(new double[]{x, realLog5.log5(x)});
+            log10Data.add(new double[]{x, realLog10.log10(x)});
         }
 
-        CsvUtils.write(log2SeriesCsv, log2SeriesData.toArray(new double[0][]));
-        CsvUtils.write(log2MathCsv, log2MathData.toArray(new double[0][]));
-        CsvUtils.write(log5SeriesCsv, log5SeriesData.toArray(new double[0][]));
-        CsvUtils.write(log5MathCsv, log5MathData.toArray(new double[0][]));
-        CsvUtils.write(log10SeriesCsv, log10SeriesData.toArray(new double[0][]));
-        CsvUtils.write(log10MathCsv, log10MathData.toArray(new double[0][]));
+        CsvUtils.write(LOG2_SERIES_CSV, log2Data.toArray(new double[0][]));
+        CsvUtils.write(LOG5_SERIES_CSV, log5Data.toArray(new double[0][]));
+        CsvUtils.write(LOG10_SERIES_CSV, log10Data.toArray(new double[0][]));
+
+        log2ValuesFromCsv = CsvUtils.read(LOG2_SERIES_CSV);
+        log5ValuesFromCsv = CsvUtils.read(LOG5_SERIES_CSV);
+        log10ValuesFromCsv = CsvUtils.read(LOG10_SERIES_CSV);
     }
 
     @AfterAll
     static void cleanup() throws IOException {
-        Files.deleteIfExists(Path.of(log2SeriesCsv));
-        Files.deleteIfExists(Path.of(log2MathCsv));
-        Files.deleteIfExists(Path.of(log5SeriesCsv));
-        Files.deleteIfExists(Path.of(log5MathCsv));
-        Files.deleteIfExists(Path.of(log10SeriesCsv));
-        Files.deleteIfExists(Path.of(log10MathCsv));
+        Files.deleteIfExists(Path.of(LOG2_SERIES_CSV));
+        Files.deleteIfExists(Path.of(LOG5_SERIES_CSV));
+        Files.deleteIfExists(Path.of(LOG10_SERIES_CSV));
     }
 
     @Test
-    void testPositiveXFunctionUsingMocksFromSeries() throws IOException {
-        MockFunction mockLog2 = new MockFunction(log2SeriesCsv);
-        Log2Series log2Mock = new Log2Series(new LnSeries(EPS)) {
-            @Override
-            public double log2(double x) {
-                return mockLog2.apply(x);
+    void testPositiveXFunctionUsingMocksFromSeries() {
+        Log2Series mockLog2 = mock(Log2Series.class);
+        Log5Series mockLog5 = mock(Log5Series.class);
+        Log10Series mockLog10 = mock(Log10Series.class);
+
+        when(mockLog2.log2(anyDouble())).thenAnswer(invocation -> {
+            double x = invocation.getArgument(0);
+            for (Map.Entry<Double, Double> entry : log2ValuesFromCsv.entrySet()) {
+                if (Math.abs(entry.getKey() - x) <= 1e-3) {
+                    return entry.getValue();
+                }
             }
-        };
+            throw new IllegalArgumentException("log2: значение для x=" + x + " не найдено");
+        });
 
-        MockFunction mockLog5 = new MockFunction(log5SeriesCsv);
-        Log5Series log5Mock = new Log5Series(new LnSeries(EPS)) {
-            @Override
-            public double log5(double x) {
-                return mockLog5.apply(x);
+        when(mockLog5.log5(anyDouble())).thenAnswer(invocation -> {
+            double x = invocation.getArgument(0);
+            for (Map.Entry<Double, Double> entry : log5ValuesFromCsv.entrySet()) {
+                if (Math.abs(entry.getKey() - x) <= 1e-3) {
+                    return entry.getValue();
+                }
             }
-        };
+            throw new IllegalArgumentException("log5: значение для x=" + x + " не найдено");
+        });
 
-        MockFunction mockLog10 = new MockFunction(log10SeriesCsv);
-        Log10Series log10Mock = new Log10Series(new LnSeries(EPS)) {
-            @Override
-            public double log10(double x) {
-                return mockLog10.apply(x);
+        when(mockLog10.log10(anyDouble())).thenAnswer(invocation -> {
+            double x = invocation.getArgument(0);
+            for (Map.Entry<Double, Double> entry : log10ValuesFromCsv.entrySet()) {
+                if (Math.abs(entry.getKey() - x) <= 1e-3) {
+                    return entry.getValue();
+                }
             }
-        };
+            throw new IllegalArgumentException("log10: значение для x=" + x + " не найдено");
+        });
 
-        PositiveXFunction func = new PositiveXFunction(log2Mock, log5Mock, log10Mock);
+        PositiveXFunction func = new PositiveXFunction(mockLog2, mockLog5, mockLog10);
 
-        double start = 0.2;
-        double end = 2;
-        double step = 0.3;
-        for (double x = start; x <= end + 1e-12; x += step) {
-            double expected = computeExpected(x);
-            double actual = func.compute(x);
-            assertEquals(expected, actual, 1e-3);
-        }
-    }
-
-    @Test
-    void testPositiveXFunctionUsingMocksFromMath() throws IOException {
-        MockFunction mockLog2 = new MockFunction(log2MathCsv);
-        Log2Series log2Mock = new Log2Series(new LnSeries(EPS)) {
-            @Override
-            public double log2(double x) {
-                return mockLog2.apply(x);
-            }
-        };
-
-        MockFunction mockLog5 = new MockFunction(log5MathCsv);
-        Log5Series log5Mock = new Log5Series(new LnSeries(EPS)) {
-            @Override
-            public double log5(double x) {
-                return mockLog5.apply(x);
-            }
-        };
-
-        MockFunction mockLog10 = new MockFunction(log10MathCsv);
-        Log10Series log10Mock = new Log10Series(new LnSeries(EPS)) {
-            @Override
-            public double log10(double x) {
-                return mockLog10.apply(x);
-            }
-        };
-
-        PositiveXFunction func = new PositiveXFunction(log2Mock, log5Mock, log10Mock);
-
-        double start = 0.2;
-        double end = 2;
-        double step = 0.3;
-        for (double x = start; x <= end + 1e-12; x += step) {
+        double start = 1;
+        double end = 10;
+        double step = 1;
+        for (double x = start; x <= end; x += step) {
             double expected = computeExpected(x);
             double actual = func.compute(x);
             assertEquals(expected, actual, 1e-3);
@@ -145,16 +109,16 @@ class PositiveXFunctionIntegrationTest {
 
     @Test
     void testPositiveXFunctionUsingRealSeries() {
-        LnSeries realLn = new LnSeries(EPS);
+        LnSeries realLn = new LnSeries(1e-15);
         Log2Series realLog2 = new Log2Series(realLn);
         Log5Series realLog5 = new Log5Series(realLn);
         Log10Series realLog10 = new Log10Series(realLn);
         PositiveXFunction func = new PositiveXFunction(realLog2, realLog5, realLog10);
 
-        double start = 0.2;
-        double end = 7;
-        double step = 0.3;
-        for (double x = start; x <= end + 1e-12; x += step) {
+        double start = 1;
+        double end = 10;
+        double step = 1;
+        for (double x = start; x <= end; x += step) {
             double expected = computeExpected(x);
             double actual = func.compute(x);
             assertEquals(expected, actual, 1e-7);

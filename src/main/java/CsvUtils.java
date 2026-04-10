@@ -13,7 +13,7 @@ public class CsvUtils {
         try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(Path.of(filename)))) {
             pw.println("x,value");
             for (double[] pair : data) {
-                pw.printf(Locale.US, "%.15f,%.15f%n", pair[0], pair[1]);
+                pw.printf(Locale.US, "%.3f,%.15f%n", pair[0], pair[1]);
             }
         }
     }

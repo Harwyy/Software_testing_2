@@ -63,14 +63,4 @@ class CombinedFunctionTest {
         }
     }
 
-    private double computePositiveExpected(double x) {
-        double log5Val = Math.log(x * x) / Math.log(5);
-        double log10Val = Math.log(x * x * x) / Math.log(10);
-        double sum = log5Val + log10Val;
-        double square = sum * sum;
-        double cube = square * square * square;
-        double log2Val = Math.log(x * x * x) / Math.log(2);
-        return cube / log2Val;
-    }
-
 }
